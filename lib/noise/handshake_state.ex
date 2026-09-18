@@ -333,7 +333,7 @@ defmodule Noise.HandshakeState do
     len = if has_key?(state), do: dhlen + 16, else: dhlen
 
     with <<temp::binary-size(^len), rest::binary>> <- message,
-         {:ok, rs, state} <- decrypt_and_hash(state, temp) do
+         {:ok, rs, %__MODULE__{} = state} <- decrypt_and_hash(state, temp) do
       {:ok, rest, %__MODULE__{state | rs: rs}}
     else
       {:error, _} = error -> error

@@ -20,7 +20,7 @@ now returns `{:error, reason}` instead of crashing or silently misbehaving.
   `ArgumentError`.
 - `Noise.CipherState`, `Noise.SymmetricState` and `Noise.HandshakeState`
   are opaque; `Noise.Handshake`, `Noise.Crypto` and `Noise.Utils` are removed.
-- `Noise.Crypto.DH.dh/2` returns `{:ok, shared} | {:error, :invalid_public_key}`.
+- `c:Noise.Crypto.DH.dh/2` returns `{:ok, shared} | {:error, :invalid_public_key}`.
 - Requires Elixir 1.18.
 
 ### Fixed
