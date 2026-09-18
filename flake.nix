@@ -32,7 +32,6 @@
         ];
 
         env = {
-          MIX_OS_DEPS_COMPILE_PARTITION_COUNT = "16";
           ERL_AFLAGS = "+pc unicode -kernel shell_history enabled";
           ELIXIR_ERL_OPTIONS = "+sssdio 128";
         };

@@ -40,40 +40,99 @@ primitives you select (`:crypto.supports/1` lists them).
 
 ## Usage
 
-`Noise_XX_25519_ChaChaPoly_BLAKE2s`: three messages, both parties learn each
-other's static key during the handshake.
+A Noise session has two phases: a **handshake** (a fixed number of messages
+that authenticate the peers and agree on keys) followed by **transport**
+(arbitrarily many encrypted messages). This library only produces and
+consumes binaries; moving them between the two parties over TCP, WebSocket,
+or anything else is up to you.
+
+The walkthrough below uses `Noise_XX_25519_ChaChaPoly_BLAKE2s`: three
+handshake messages, and both parties learn each other's static key during the
+handshake so nothing needs to be known in advance. Both sides are shown in one
+snippet for readability; in practice each half runs on its own machine.
 
 ```elixir
 protocol = Noise.protocol("Noise_XX_25519_ChaChaPoly_BLAKE2s")
+
+# Static keys are long-term identities: generate once, store the private key
+# securely, and reuse the keypair across connections. They are generated here
+# only for the demo. `{private, public}` tuples.
 client_kp = Noise.generate_keypair(protocol)
 server_kp = Noise.generate_keypair(protocol)
 
+# The initiator (`true`) sends the first message; the responder (`false`)
+# waits for it. The prologue is any bytes both sides must already agree on
+# (a protocol version, for example); a mismatch makes the handshake fail.
+# Use "" if you have nothing to bind.
 client = Noise.handshake(protocol, true, "prologue", s: client_kp)
 server = Noise.handshake(protocol, false, "prologue", s: server_kp)
 
-# -> e
+# Every handshake_step/2 call either produces a message that must be sent to
+# the peer, or consumes one received from the peer, strictly alternating.
+# States are immutable: always continue with the state that is returned.
+
+# Message 1 (-> e): the client produces `msg1` and sends it over the wire.
+# The second argument is an optional payload delivered with the message.
+# In XX the first payload is not encrypted, so keep it empty or non-secret.
 {:ok, msg1, client} = Noise.handshake_step(client, "hello")
+# ... client sends msg1 to server ...
 {:ok, "hello", server} = Noise.handshake_step(server, msg1)
 
-# <- e, ee, s, es
+# Message 2 (<- e, ee, s, es): now it is the server's turn to send.
 {:ok, msg2, server} = Noise.handshake_step(server, "")
+# ... server sends msg2 to client ...
 {:ok, "", client} = Noise.handshake_step(client, msg2)
 
-# -> s, se  — the last message; both sides return :complete
+# Message 3 (-> s, se): the last handshake message. Both sides return
+# :complete instead of :ok, which tells you to stop calling handshake_step/2.
 {:complete, msg3, client} = Noise.handshake_step(client, "")
+# ... client sends msg3 to server ...
 {:complete, "", server} = Noise.handshake_step(server, msg3)
 
-# Peer identity and channel binding
+# The handshake proves the peer holds the private key for the static public
+# key it sent. Noise does NOT decide whether that key is one you trust:
+# compare it against pinned keys, a database, TOFU, ... before proceeding.
 server_pub = Noise.remote_static(client)
+client_pub = Noise.remote_static(server)
+
+# The handshake hash is identical on both sides and unique to this session;
+# use it for channel binding (e.g. sign it in an application-level login).
 true = Noise.handshake_hash(client) == Noise.handshake_hash(server)
 
-# Transport: split/1 returns {send, receive} for *this* role
+# Transport phase. split/1 turns the completed handshake into two cipher
+# states, already ordered as {send, receive} for that state's role. The
+# client's send state pairs with the server's receive state and vice versa.
 {client_tx, client_rx} = Noise.split(client)
 {server_tx, server_rx} = Noise.split(server)
 
+# Each encrypt/decrypt returns an updated cipher state; keep using the
+# returned one. Messages carry an implicit counter, so the receiver must
+# decrypt them in the exact order they were encrypted.
 {:ok, ciphertext, client_tx} = Noise.encrypt(client_tx, "secret")
+# ... client sends ciphertext to server ...
 {:ok, "secret", server_rx} = Noise.decrypt(server_rx, ciphertext)
+
+# The other direction uses the other pair.
+{:ok, reply, server_tx} = Noise.encrypt(server_tx, "got it")
+# ... server sends reply to client ...
+{:ok, "got it", client_rx} = Noise.decrypt(client_rx, reply)
 ```
+
+### Framing
+
+Noise messages are not self-delimiting. Handshake and transport messages can
+each be up to 65535 bytes, and a transport ciphertext is exactly 16 bytes
+longer than its plaintext. Over a stream transport such as TCP you need to
+add framing yourself; a 2-byte big-endian length prefix is the usual choice:
+
+```elixir
+frame = <<byte_size(msg)::16, msg::binary>>
+```
+
+Anything larger than 65519 bytes of plaintext has to be split into several
+`Noise.encrypt/2` calls, each one its own frame.
+
+### Explicit read/write
 
 `handshake_step/2` writes when it is your turn and reads otherwise. Use
 `Noise.write_message/2` / `Noise.read_message/2` when you want that explicit;
