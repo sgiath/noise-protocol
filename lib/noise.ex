@@ -201,7 +201,7 @@ defmodule Noise do
   defp tag_completion({:error, _} = error), do: error
 
   defp ensure_key!(cipher_state) do
-    unless CipherState.has_key?(cipher_state) do
+    if not CipherState.has_key?(cipher_state) do
       raise ArgumentError, "cipher state has no key; use the states returned by Noise.split/1"
     end
   end

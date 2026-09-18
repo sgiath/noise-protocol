@@ -1,8 +1,0 @@
----
-description: project overview
-alwaysApply: true
----
-
-- this project aims to implement Noise protocol specification in Elixir
-- the specification is in the `protocol.md` file in the root folder of the repository
-- the specification MUST be followed precisely, it is OK not to implement parts of the specificaiton but if some feature is implemented it must follow the specification

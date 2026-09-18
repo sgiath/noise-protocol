@@ -14,25 +14,30 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # https://elixir.hexdocs.pm/compatibility-and-deprecations.html
       matrix:
         include:
-          # oldest supported pair
           - elixir: "1.18"
             otp: "27"
-          # newest
+          - elixir: "1.19"
+            otp: "27"
+          - elixir: "1.19"
+            otp: "28"
+          - elixir: "1.20"
+            otp: "27"
           - elixir: "1.20"
             otp: "28"
-    env:
-      MIX_ENV: dev
+          - elixir: "1.20"
+            otp: "29"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             deps

@@ -246,7 +246,7 @@ defmodule Noise.HandshakeState do
             "pattern #{pattern.name} needs #{expected} pre-shared key(s), got #{length(psks)}"
     end
 
-    unless Enum.all?(psks, &(is_binary(&1) and byte_size(&1) == 32)) do
+    if not Enum.all?(psks, &(is_binary(&1) and byte_size(&1) == 32)) do
       raise ArgumentError, "pre-shared keys must be 32 bytes (spec §9.2)"
     end
   end
