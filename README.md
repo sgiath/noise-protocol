@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Sgiath/noise-protocol/master/docs/header.svg" width="820" alt="XX handshake sequence diagram: -> e, <- e, ee, s, es, -> s, se, then Split() into transport ciphers"/>
+</p>
+
 # Noise Protocol
 
 [![Hex.pm](https://img.shields.io/hexpm/v/noise_protocol.svg?style=flat&color=blue)](https://hex.pm/packages/noise_protocol)
