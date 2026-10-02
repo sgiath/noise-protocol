@@ -43,6 +43,7 @@
 - `Noise.Pattern.one_way?/1` and `Noise.HandshakeState.one_way?/1`.
 - `Noise.Protocol` docs describe how to plug in custom DH, cipher and hash
   implementations.
+- CI fails on ExDoc warnings.
 
 ## 0.3.0
 
