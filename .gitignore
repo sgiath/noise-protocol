@@ -26,3 +26,9 @@ noise_protocol-*.tar
 /tmp/
 
 .env
+
+# Editor, language-server and direnv caches.
+/.direnv/
+/.elixir_ls/
+/.elixir-tools/
+/.expert/
