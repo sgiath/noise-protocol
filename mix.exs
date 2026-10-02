@@ -42,7 +42,7 @@ defmodule Noise.MixProject do
       {:lib_secp256k1, "~> 0.8", optional: true},
 
       # Development
-      {:ex_check, "~> 0.16", only: [:dev], runtime: false},
+      {:ex_check, "~> 0.17", only: [:dev], runtime: false},
       {:credo, "~> 1.7", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.40", only: [:dev], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev], runtime: false},
