@@ -14,9 +14,11 @@ defmodule Noise.Pattern do
 
   @type token() :: :e | :s | :ee | :se | :es | :ss | :psk
   @type role() :: :ini | :resp
+  @typedoc "Pre-message tokens of one party: `[]`, `[:e]`, `[:s]` or `[:e, :s]` (spec §7.1)."
+  @type pre_message() :: [:e | :s]
   @type t() :: %__MODULE__{
           name: String.t(),
-          pre_message: [[token()]],
+          pre_message: [pre_message()],
           tokens: [{role(), [token()]}]
         }
 
@@ -54,6 +56,10 @@ defmodule Noise.Pattern do
   def pre_shares?(%__MODULE__{pre_message: [ini_pre, _]}, :ini, token), do: token in ini_pre
   def pre_shares?(%__MODULE__{pre_message: [_, resp_pre]}, :resp, token), do: token in resp_pre
 
+  @doc "Whether this is a one-way pattern (spec §7.4): a single initiator→responder message."
+  @spec one_way?(t()) :: boolean()
+  def one_way?(%__MODULE__{tokens: tokens}), do: match?([{:ini, _}], tokens)
+
   defp apply_modifiers(pattern, full_name, "") do
     %{pattern | name: full_name}
   end
@@ -69,7 +75,8 @@ defmodule Noise.Pattern do
 
   # psk0 prepends to the first message; pskN (N >= 1) appends to the Nth message (spec §9.4)
   defp apply_modifier("psk" <> n, tokens, full_name) do
-    with {i, ""} <- Integer.parse(n), true <- Integer.to_string(i) == n and i <= length(tokens) do
+    with {i, ""} <- Integer.parse(n),
+         true <- Integer.to_string(i) == n and i >= 0 and i <= length(tokens) do
       insert_psk(tokens, i)
     else
       _ -> raise ArgumentError, "Modifier psk#{n} is out of range for pattern #{full_name}"

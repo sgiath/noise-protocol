@@ -19,6 +19,9 @@ if Code.ensure_loaded?(Secp256k1) do
     def dhlen, do: 33
 
     @impl Noise.Crypto.DH
+    def valid_seckey?(seckey), do: Secp256k1.valid_seckey?(seckey)
+
+    @impl Noise.Crypto.DH
     def generate_keypair, do: Secp256k1.keypair(:compressed)
 
     @impl Noise.Crypto.DH

@@ -87,7 +87,6 @@ defmodule Noise.CipherStateTest do
   end
 
   test "inspect never shows the key", %{keyed: state} do
-    refute inspect(state) =~ Base.encode16(@key, case: :lower)
-    refute inspect(state, limit: :infinity) =~ "<<7"
+    refute inspect(state, limit: :infinity) =~ inspect(@key, limit: :infinity)
   end
 end

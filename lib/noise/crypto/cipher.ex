@@ -19,6 +19,7 @@ defmodule Noise.Crypto.Cipher do
   @callback rekey(key :: key()) :: key()
 
   @doc "Largest nonce value; reserved for `rekey/1` (spec §5.1)."
+  @spec max_nonce() :: nonce()
   def max_nonce, do: 0xFFFF_FFFF_FFFF_FFFF
 
   defmacro __using__(_opts) do

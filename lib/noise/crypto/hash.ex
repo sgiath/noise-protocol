@@ -9,7 +9,7 @@ defmodule Noise.Crypto.Hash do
 
   @callback hashlen() :: 32 | 64
   @callback hash(data :: iodata()) :: hash()
-  @callback hmac_hash(key :: hash(), data :: iodata()) :: hash()
+  @callback hmac_hash(key :: binary(), data :: iodata()) :: hash()
   @callback hkdf(
               chaining_key :: hash(),
               input_key_material :: binary(),

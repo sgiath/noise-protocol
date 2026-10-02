@@ -69,6 +69,12 @@ defmodule Noise.HandshakeStateTest do
       assert_raise ArgumentError, ~r/rs must be a 32-byte public key/, fn ->
         HandshakeState.initialize("Noise_NK_25519_ChaChaPoly_BLAKE2b", true, "", rs: "short")
       end
+
+      assert_raise ArgumentError, ~r/s must be .* valid private key/, fn ->
+        HandshakeState.initialize("Noise_XX_25519_ChaChaPoly_BLAKE2b", true, "",
+          s: {<<>>, elem(keypair(), 1)}
+        )
+      end
     end
 
     test "requires exactly one 32-byte PSK per psk token (spec §9.2)" do

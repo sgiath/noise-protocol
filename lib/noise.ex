@@ -53,24 +53,35 @@ defmodule Noise do
   `handshake_step/2` writes when it is your turn to send and reads otherwise;
   use `write_message/2` and `read_message/2` when you want that explicit.
 
+  ## One-way patterns
+
+  After `N`, `K` or `X` (spec §7.4) only the initiator sends: `split/1`
+  returns `{send, nil}` for the initiator and `{nil, receive}` for the
+  recipient, which must never send (spec §7.4).
+
   ## Errors
 
   Hostile or corrupted network input never raises. Handshake and transport
   functions return `{:error, reason}` with one of:
 
-    * `:decrypt_failed` - AEAD authentication failed; the state is unchanged
-      and the message must be discarded
-    * `:malformed_message` - a handshake message is too short for its tokens
+    * `:decrypt_failed` - AEAD authentication failed. During the handshake
+      this means the handshake has failed: discard the handshake state
+      (spec §5.3). On a transport cipher state the state is unchanged; drop
+      the message and keep using the state.
+    * `:malformed_message` - a handshake message is too short for its tokens;
+      the handshake has failed
     * `:message_too_long` - a message exceeds the 65535-byte Noise limit
-    * `:invalid_public_key` - the peer sent a key the DH function rejects
-    * `:nonce_exhausted` - the cipher state has sent/received 2^64-1 messages
+    * `:invalid_public_key` - the peer sent a key the DH function rejects;
+      the handshake has failed
+    * `:nonce_exhausted` - the cipher state has sent/received 2^64-1
+      messages; `rekey/1` does not reset the nonce, so run a new handshake
     * `:wrong_turn` - `write_message/2` called when the peer should be
       sending, or vice versa
     * `:handshake_complete` - a handshake function called after the last
       message; call `split/1`
 
-  Configuration mistakes (unknown protocol name, missing static key, wrong
-  PSK count) raise `ArgumentError` from `protocol/1` and `handshake/4`.
+  Configuration mistakes (unknown protocol name, missing or malformed key,
+  wrong PSK count) raise `ArgumentError` from `protocol/1` and `handshake/4`.
   """
 
   alias Noise.CipherState
@@ -146,14 +157,26 @@ defmodule Noise do
   Splits a completed handshake into `{send, receive}` cipher states for
   *this* party — the initiator→responder / responder→initiator ordering of
   the spec is already resolved by role. Raises unless complete.
+
+  For one-way patterns the unusable direction is `nil`: the initiator gets
+  `{send, nil}` and the recipient `{nil, receive}` (spec §7.4).
   """
-  @spec split(handshake_state()) :: {cipher_state(), cipher_state()}
+  @spec split(handshake_state()) :: {cipher_state() | nil, cipher_state() | nil}
   def split(state) do
     {c1, c2} = HandshakeState.split(state)
-    if HandshakeState.initiator?(state), do: {c1, c2}, else: {c2, c1}
+
+    cond do
+      HandshakeState.one_way?(state) and HandshakeState.initiator?(state) -> {c1, nil}
+      HandshakeState.one_way?(state) -> {nil, c1}
+      HandshakeState.initiator?(state) -> {c1, c2}
+      true -> {c2, c1}
+    end
   end
 
-  @doc "The handshake hash `h`, for channel binding (spec §11.2)."
+  @doc """
+  The handshake hash `h`, for channel binding (spec §11.2). Raises unless the
+  handshake is complete.
+  """
   @spec handshake_hash(handshake_state()) :: binary()
   defdelegate handshake_hash(state), to: HandshakeState
 
@@ -190,15 +213,26 @@ defmodule Noise do
     end
   end
 
-  @doc "Derives a new key for the cipher state (spec §11.3). Both parties must rekey in lockstep."
+  @doc """
+  Derives a new key for the cipher state (spec §11.3). Both parties must rekey
+  in lockstep. The nonce is not reset.
+  """
   @spec rekey(cipher_state()) :: cipher_state()
-  defdelegate rekey(cipher_state), to: CipherState
+  def rekey(cipher_state) do
+    ensure_key!(cipher_state)
+    CipherState.rekey(cipher_state)
+  end
 
   defp tag_completion({:ok, data, state}) do
     if HandshakeState.complete?(state), do: {:complete, data, state}, else: {:ok, data, state}
   end
 
   defp tag_completion({:error, _} = error), do: error
+
+  defp ensure_key!(nil) do
+    raise ArgumentError,
+          "no cipher state for this direction; after a one-way handshake only the initiator sends"
+  end
 
   defp ensure_key!(cipher_state) do
     if not CipherState.has_key?(cipher_state) do

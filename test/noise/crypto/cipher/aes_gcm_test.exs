@@ -26,8 +26,10 @@ defmodule Noise.Crypto.Cipher.AESGCMTest do
     assert AESGCM.decrypt(@k, 0, "ad1", <<1, 2, 3>>) == :error
   end
 
-  test "rekey derives a different 32-byte key" do
-    assert byte_size(AESGCM.rekey(@k)) == 32
-    assert AESGCM.rekey(@k) != @k
+  test "rekey is ENCRYPT(k, 2^64-1, zerolen, zeros[32]) truncated to 32 bytes (spec §4.2)" do
+    k = Base.decode16!("E68F69B7F096D7917245F5E5CF8AE1595FEBE4D4644333C99F9C4A1282031C9F")
+
+    assert AESGCM.rekey(k) ==
+             Base.decode16!("C2EF793F01F84B310352948861D6713A9966D996617E4FBFBE545A335370E163")
   end
 end

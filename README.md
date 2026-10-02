@@ -101,6 +101,7 @@ client_pub = Noise.remote_static(server)
 
 # The handshake hash is identical on both sides and unique to this session;
 # use it for channel binding (e.g. sign it in an application-level login).
+# It is only available once the handshake is complete.
 true = Noise.handshake_hash(client) == Noise.handshake_hash(server)
 
 # Transport phase. split/1 turns the completed handshake into two cipher
@@ -153,28 +154,60 @@ responder = Noise.handshake("Noise_IK_25519_AESGCM_SHA256", false, "", s: kp_r)
 Noise.handshake("Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s", true, "", psks: [psk])
 ```
 
-Missing or superfluous keys raise `ArgumentError` at `Noise.handshake/4`.
+`Noise.handshake/4` raises `ArgumentError` for a missing key the pattern
+needs, an `:rs`/`:re` the peer transmits itself, a malformed key, or a wrong
+number or size of PSKs.
+
+### One-way patterns
+
+`N`, `K` and `X` are a single message from initiator to recipient; the
+recipient must never send (spec §7.4). `split/1` returns `nil` for the
+direction that does not exist:
+
+```elixir
+protocol = Noise.protocol("Noise_N_25519_ChaChaPoly_BLAKE2s")
+# The recipient's static keypair is long-term; the sender must already have
+# its public key (distributed out of band, before any Noise message).
+{_, recipient_pub} = recipient_kp = Noise.generate_keypair(protocol)
+
+sender = Noise.handshake(protocol, true, "", rs: recipient_pub)
+recipient = Noise.handshake(protocol, false, "", s: recipient_kp)
+
+{:complete, msg, sender} = Noise.handshake_step(sender, "")
+# ... sender sends msg to recipient ...
+{:complete, "", recipient} = Noise.handshake_step(recipient, msg)
+
+{tx, nil} = Noise.split(sender)
+{nil, rx} = Noise.split(recipient)
+
+{:ok, ciphertext, tx} = Noise.encrypt(tx, "one way")
+# ... sender sends ciphertext to recipient ...
+{:ok, "one way", rx} = Noise.decrypt(rx, ciphertext)
+```
 
 ## Errors
 
 Anything coming from the network is handled without raising:
 
-| Reason                | Meaning                                                              |
-| --------------------- | -------------------------------------------------------------------- |
-| `:decrypt_failed`     | AEAD tag mismatch. State unchanged; drop the message and carry on.   |
-| `:malformed_message`  | Handshake message shorter than its tokens require.                   |
-| `:message_too_long`   | Over the 65535-byte Noise limit (65519 bytes of transport plaintext).|
-| `:invalid_public_key` | The peer's DH key was rejected (bad encoding or low-order point).    |
-| `:nonce_exhausted`    | 2^64-1 messages sent or received on one cipher state; rekey earlier. |
-| `:wrong_turn`         | `write_message/2` on the peer's turn or vice versa.                  |
-| `:handshake_complete` | Handshake function called after the last message; call `split/1`.   |
+| Reason                | Meaning                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `:decrypt_failed`     | AEAD tag mismatch. During the handshake: the handshake failed. In transport: state unchanged; drop the message and keep using the state. |
+| `:malformed_message`  | Handshake message shorter than its tokens require; the handshake failed.                                                                 |
+| `:message_too_long`   | Over the 65535-byte Noise limit (65519 bytes of transport plaintext).                                                                    |
+| `:invalid_public_key` | The peer's DH key was rejected (bad encoding or low-order point); the handshake failed.                                                  |
+| `:nonce_exhausted`    | 2^64-1 messages sent or received on one cipher state. `rekey/1` keeps the nonce, so start a new handshake.                               |
+| `:wrong_turn`         | `write_message/2` on the peer's turn or vice versa.                                                                                      |
+| `:handshake_complete` | Handshake function called after the last message; call `split/1`.                                                                       |
+
+A failed handshake is final (spec §5.3): discard the handshake state and start
+over instead of retrying with it.
 
 Private keys, PSKs and chaining keys are redacted from `inspect/1`.
 
 ## Development
 
 ```sh
-mix check   # format, compile --warnings-as-errors, credo, dialyzer, docs, tests
+mix check   # format, compile --warnings-as-errors, credo, docs, tests
 ```
 
 The spec this implementation follows is checked in as `protocol.md`.

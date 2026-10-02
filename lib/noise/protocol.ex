@@ -84,16 +84,19 @@ defmodule Noise.Protocol do
   @spec hash(t(), iodata()) :: Hash.hash()
   def hash(%__MODULE__{hash: hash}, data), do: hash.hash(data)
 
-  @spec hkdf(t(), Hash.hash(), binary(), 2 | 3) :: tuple()
+  @spec hkdf(t(), Hash.hash(), binary(), 2 | 3) ::
+          {Hash.hash(), Hash.hash()} | {Hash.hash(), Hash.hash(), Hash.hash()}
   def hkdf(%__MODULE__{hash: hash}, ck, ikm, n), do: hash.hkdf(ck, ikm, n)
 
   defp parse_dh("25519"), do: Noise.Crypto.DH.X25519
   defp parse_dh("448"), do: Noise.Crypto.DH.X448
 
-  defp parse_dh("secp256k1") do
-    if Code.ensure_loaded?(Noise.Crypto.DH.Secp256k1) do
-      Noise.Crypto.DH.Secp256k1
-    else
+  # Decided at compile time, like `Noise.Crypto.DH.Secp256k1` itself, so builds
+  # without the optional dependency never reference the missing module.
+  if Code.ensure_loaded?(Secp256k1) do
+    defp parse_dh("secp256k1"), do: Noise.Crypto.DH.Secp256k1
+  else
+    defp parse_dh("secp256k1") do
       raise ArgumentError,
             "DH function secp256k1 requires the optional dependency {:lib_secp256k1, \"~> 0.8\"}"
     end

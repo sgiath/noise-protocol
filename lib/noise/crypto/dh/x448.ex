@@ -6,6 +6,9 @@ defmodule Noise.Crypto.DH.X448 do
   def dhlen, do: 56
 
   @impl Noise.Crypto.DH
+  def valid_seckey?(seckey), do: is_binary(seckey) and byte_size(seckey) == 56
+
+  @impl Noise.Crypto.DH
   def generate_keypair do
     {pubkey, seckey} = :crypto.generate_key(:ecdh, :x448)
     {seckey, pubkey}

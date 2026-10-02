@@ -26,9 +26,8 @@ defmodule Noise.Crypto.Cipher.ChaChaPolyTest do
     assert ChaChaPoly.decrypt(@k, 0, @ad, <<>>) == :error
   end
 
-  test "rekey derives a different 32-byte key deterministically" do
-    assert byte_size(ChaChaPoly.rekey(@k)) == 32
-    assert ChaChaPoly.rekey(@k) != @k
-    assert ChaChaPoly.rekey(@k) == ChaChaPoly.rekey(@k)
+  test "rekey is ENCRYPT(k, 2^64-1, zerolen, zeros[32]) truncated to 32 bytes (spec §4.2)" do
+    assert ChaChaPoly.rekey(@k) ==
+             Base.decode16!("1CF5C6E33411A94C08F0CEAB36F3EC7355E3ADE5309EC324DF2EEFCA2B84AF63")
   end
 end

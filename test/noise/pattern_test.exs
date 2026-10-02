@@ -80,6 +80,14 @@ defmodule Noise.PatternTest do
       end
 
       assert_raise ArgumentError, ~r/psk is out of range/, fn -> Pattern.from_name("NNpsk") end
+
+      assert_raise ArgumentError, ~r/psk-1 is out of range/, fn ->
+        Pattern.from_name("NNpsk-1")
+      end
+
+      assert_raise ArgumentError, ~r/psk-3 is out of range/, fn ->
+        Pattern.from_name("NNpsk-3")
+      end
     end
 
     test "rejects unknown modifiers" do

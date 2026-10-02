@@ -60,6 +60,27 @@ defmodule NoiseTest do
     assert {:error, :handshake_complete} = Noise.handshake_step(init, "")
   end
 
+  test "handshake_hash raises until the handshake is complete" do
+    init = Noise.handshake("Noise_NN_25519_AESGCM_SHA256", true)
+    assert_raise ArgumentError, ~r/not complete/, fn -> Noise.handshake_hash(init) end
+  end
+
+  test "one-way split exposes only the initiator-to-responder direction (spec §7.4)" do
+    protocol = Noise.protocol("Noise_N_25519_ChaChaPoly_BLAKE2s")
+    {_, server_pub} = server_kp = Noise.generate_keypair(protocol)
+
+    sender = Noise.handshake(protocol, true, "", rs: server_pub)
+    recipient = Noise.handshake(protocol, false, "", s: server_kp)
+    {:complete, m1, sender} = Noise.handshake_step(sender, "")
+    {:complete, "", recipient} = Noise.handshake_step(recipient, m1)
+
+    assert {tx, nil} = Noise.split(sender)
+    assert {nil, rx} = Noise.split(recipient)
+
+    {:ok, c, _} = Noise.encrypt(tx, "one way")
+    assert {:ok, "one way", _} = Noise.decrypt(rx, c)
+  end
+
   describe "hostile input" do
     setup do
       protocol = Noise.protocol(@xx)
@@ -83,16 +104,12 @@ defmodule NoiseTest do
       assert {:error, :malformed_message} = Noise.handshake_step(client, binary_part(m2, 0, 90))
     end
 
-    test "flipped tag bit fails authentication and leaves the state usable", %{
-      client: client,
-      m2: m2
-    } do
+    test "flipped tag bit fails authentication", %{client: client, m2: m2} do
       size = byte_size(m2) - 1
       <<prefix::binary-size(^size), last>> = m2
       tampered = <<prefix::binary, Bitwise.bxor(last, 1)>>
 
       assert {:error, :decrypt_failed} = Noise.handshake_step(client, tampered)
-      assert {:ok, "", _} = Noise.handshake_step(client, m2)
     end
 
     test "low-order ephemeral is rejected as invalid_public_key", %{protocol: protocol} do
@@ -164,6 +181,7 @@ defmodule NoiseTest do
       cs = Noise.CipherState.initialize(Noise.protocol(@xx))
       assert_raise ArgumentError, fn -> Noise.encrypt(cs, "plaintext") end
       assert_raise ArgumentError, fn -> Noise.decrypt(cs, "ciphertext") end
+      assert_raise ArgumentError, fn -> Noise.rekey(cs) end
     end
   end
 
@@ -176,10 +194,20 @@ defmodule NoiseTest do
           "Noise_NN_25519_XChaChaPoly_BLAKE2s",
           "Noise_NN_25519_ChaChaPoly_SHA3",
           "Noise_NNpsk3_25519_ChaChaPoly_BLAKE2s",
-          "Noise_NNfallback_25519_ChaChaPoly_BLAKE2s",
-          "Noise_NN_25519_ChaChaPoly_BLAKE2s" <> String.duplicate("+", 230)
+          "Noise_NNfallback_25519_ChaChaPoly_BLAKE2s"
         ] do
       assert_raise ArgumentError, fn -> Noise.protocol(name) end
     end
+  end
+
+  test "protocol names over 255 bytes are rejected (spec §8)" do
+    # Repeated psk modifiers keep the name otherwise valid, isolating the length rule.
+    name = fn reps ->
+      "Noise_XXpsk0" <> String.duplicate("+psk3", reps) <> "_448_AESGCM_SHA256"
+    end
+
+    assert byte_size(name.(45)) == 255
+    assert %Noise.Protocol{} = Noise.protocol(name.(45))
+    assert_raise ArgumentError, ~r/at most 255 bytes/, fn -> Noise.protocol(name.(46)) end
   end
 end

@@ -20,7 +20,7 @@ defmodule Noise.VectorRunner do
     init = Noise.handshake(protocol, true, prologue, side_opts(vector, "init", protocol))
     resp = Noise.handshake(protocol, false, prologue, side_opts(vector, "resp", protocol))
 
-    one_way? = Enum.all?(protocol.pattern.tokens, fn {role, _} -> role == :ini end)
+    one_way? = Noise.Pattern.one_way?(protocol.pattern)
 
     run_messages(vector["messages"], {:handshake, init}, {:handshake, resp}, one_way?, vector)
   end

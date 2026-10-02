@@ -6,7 +6,9 @@ defmodule Noise.HandshakeState do
   `write_message/2` and `read_message/2` are the spec's `WriteMessage` and
   `ReadMessage`. Both enforce whose turn it is, the 65535-byte message bound
   (spec §3) and return `{:error, reason}` instead of crashing on hostile
-  input. Configuration mistakes (missing keys, wrong PSK count) raise
+  input. `:decrypt_failed`, `:invalid_public_key` and `:malformed_message`
+  mean the handshake has failed (spec §5.3): discard the state and do not
+  retry with it. Configuration mistakes (missing keys, wrong PSK count) raise
   `ArgumentError` from `initialize/4`.
 
   Private keys and PSKs are redacted from `inspect/1` output.
@@ -43,7 +45,7 @@ defmodule Noise.HandshakeState do
             e: DH.keypair() | nil,
             rs: DH.pubkey() | nil,
             re: DH.pubkey() | nil,
-            psks: [binary()]
+            psks: [<<_::256>>]
           }
 
   @type error() ::
@@ -122,6 +124,13 @@ defmodule Noise.HandshakeState do
   @spec complete?(t()) :: boolean()
   def complete?(%__MODULE__{message_patterns: patterns}), do: patterns == []
 
+  @doc """
+  Whether the pattern is one-way (spec §7.4). After a one-way handshake only
+  the initiator→responder cipher state may be used; the recipient never sends.
+  """
+  @spec one_way?(t()) :: boolean()
+  def one_way?(%__MODULE__{protocol: protocol}), do: Pattern.one_way?(protocol.pattern)
+
   @doc "What this party must do next: send a message, receive one, or `split/1`."
   @spec next_action(t()) :: :write | :read | :split
   def next_action(%__MODULE__{message_patterns: []}), do: :split
@@ -129,9 +138,18 @@ defmodule Noise.HandshakeState do
   def next_action(%__MODULE__{initiator: false, message_patterns: [{:resp, _} | _]}), do: :write
   def next_action(%__MODULE__{}), do: :read
 
-  @doc "`GetHandshakeHash()` (spec §5.2); for channel binding (spec §11.2) once complete."
+  @doc """
+  `GetHandshakeHash()` (spec §5.2), for channel binding (spec §11.2). Raises
+  unless the handshake is complete: a mid-handshake hash does not cover the
+  whole transcript.
+  """
   @spec handshake_hash(t()) :: binary()
-  def handshake_hash(%__MODULE__{symmetric_state: ss}), do: SymmetricState.handshake_hash(ss)
+  def handshake_hash(%__MODULE__{message_patterns: [], symmetric_state: ss}),
+    do: SymmetricState.handshake_hash(ss)
+
+  def handshake_hash(%__MODULE__{}) do
+    raise ArgumentError, "no handshake hash: handshake is not complete"
+  end
 
   @doc "The remote static public key, once it is known."
   @spec remote_static(t()) :: DH.pubkey() | nil
@@ -194,7 +212,7 @@ defmodule Noise.HandshakeState do
 
   # --- initialization ------------------------------------------------------
 
-  defp validate_keys!(%Protocol{pattern: pattern, dhlen: dhlen}, initiator, opts) do
+  defp validate_keys!(%Protocol{pattern: pattern, dh: dh, dhlen: dhlen}, initiator, opts) do
     {me, peer} = if initiator, do: {:ini, :resp}, else: {:resp, :ini}
 
     validate_static!(pattern, me, opts[:s])
@@ -202,8 +220,8 @@ defmodule Noise.HandshakeState do
     validate_remote_ephemeral!(pattern, peer, opts[:re])
     validate_psks!(pattern, opts[:psks])
 
-    validate_keypair!(opts[:s], :s, dhlen)
-    validate_keypair!(opts[:e], :e, dhlen)
+    validate_keypair!(opts[:s], :s, dh, dhlen)
+    validate_keypair!(opts[:e], :e, dh, dhlen)
     validate_pubkey!(opts[:rs], :rs, dhlen)
     validate_pubkey!(opts[:re], :re, dhlen)
   end
@@ -251,15 +269,19 @@ defmodule Noise.HandshakeState do
     end
   end
 
-  defp validate_keypair!(nil, _name, _dhlen), do: :ok
+  defp validate_keypair!(nil, _name, _dh, _dhlen), do: :ok
 
-  defp validate_keypair!({sec, pub}, _name, dhlen)
-       when is_binary(sec) and is_binary(pub) and byte_size(pub) == dhlen,
-       do: :ok
+  defp validate_keypair!({sec, pub}, name, dh, dhlen)
+       when is_binary(pub) and byte_size(pub) == dhlen do
+    if not dh.valid_seckey?(sec), do: raise_invalid_keypair!(name, dhlen)
+  end
 
-  defp validate_keypair!(_other, name, dhlen) do
+  defp validate_keypair!(_other, name, _dh, dhlen), do: raise_invalid_keypair!(name, dhlen)
+
+  defp raise_invalid_keypair!(name, dhlen) do
     raise ArgumentError,
-          "#{name} must be a {private_key, public_key} tuple with a #{dhlen}-byte public key"
+          "#{name} must be a {private_key, public_key} tuple with a valid private key " <>
+            "and a #{dhlen}-byte public key"
   end
 
   defp validate_pubkey!(nil, _name, _dhlen), do: :ok

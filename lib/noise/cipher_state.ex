@@ -24,7 +24,7 @@ defmodule Noise.CipherState do
   @opaque t() :: %__MODULE__{
             protocol: Protocol.t(),
             k: Cipher.key() | nil,
-            n: non_neg_integer()
+            n: Cipher.nonce()
           }
 
   @type error() :: :decrypt_failed | :nonce_exhausted

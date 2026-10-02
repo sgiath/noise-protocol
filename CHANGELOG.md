@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- After a one-way handshake (`N`, `K`, `X`) `Noise.split/1` returns `nil`
+  for the direction that must not be used: `{send, nil}` for the initiator,
+  `{nil, receive}` for the recipient (spec §7.4).
+- `Noise.handshake_hash/1` and `Noise.HandshakeState.handshake_hash/1` raise
+  `ArgumentError` until the handshake is complete.
+- `Noise.Crypto.DH` has a new `valid_seckey?/1` callback;
+  `Noise.HandshakeState.initialize/4` rejects malformed private keys with
+  `ArgumentError` instead of failing later as `:invalid_public_key`.
+
+### Fixed
+
+- Negative `pskN` modifiers (e.g. `NNpsk-1`) are rejected. Previously they
+  placed the PSK in the wrong message or dropped it entirely.
+- `Noise.rekey/1` raises `ArgumentError` on a keyless cipher state, like
+  `Noise.encrypt/3` and `Noise.decrypt/3`.
+- Documentation: handshake `:decrypt_failed`, `:invalid_public_key` and
+  `:malformed_message` are terminal (spec §5.3); `:nonce_exhausted` needs a
+  new handshake because `rekey/1` keeps the nonce.
+
+### Added
+
+- `Noise.Pattern.one_way?/1` and `Noise.HandshakeState.one_way?/1`.
+
 ## 0.3.0
 
 Security-hardening release with a breaking API. Every network-facing function
@@ -31,8 +58,10 @@ now returns `{:error, reason}` instead of crashing or silently misbehaving.
 - The reserved nonce `2^64-1` is enforced (`{:error, :nonce_exhausted}`);
   `CipherState.set_nonce/2` rejects out-of-range values.
 - The 65535-byte message limit (spec §3) is enforced on read and write.
-- Truncated handshake messages and ciphertexts shorter than the tag return
-  `{:error, :malformed_message}` instead of `MatchError`.
+- Truncated handshake messages, including encrypted handshake fields shorter
+  than the tag, return `{:error, :malformed_message}` instead of
+  `MatchError`. Transport ciphertexts shorter than the tag return
+  `{:error, :decrypt_failed}`.
 - Low-order / invalid remote public keys return
   `{:error, :invalid_public_key}` instead of raising from `:crypto`.
 - `pskN` modifiers outside the pattern's message count (e.g. `NNpsk3`),
@@ -45,8 +74,7 @@ now returns `{:error, reason}` instead of crashing or silently misbehaving.
   convention (33-byte compressed keys, `SHA256(shared point)`) via the
   optional `lib_secp256k1` dependency, and is verified against the BOLT-8
   test vectors. Previously it emitted 65-byte keys against `DHLEN = 33`.
-- Typespecs: key/hash types are byte-sized, all public functions have specs,
-  Dialyzer runs in `mix check`.
+- Typespecs: key/hash types are byte-sized and the `Noise` API has specs.
 
 ### Added
 
