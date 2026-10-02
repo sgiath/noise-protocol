@@ -59,6 +59,31 @@ defmodule Noise.HandshakeStateTest do
       end
     end
 
+    test "forbids static keys the pattern never uses, so remote_static/1 is always bound" do
+      assert_raise ArgumentError, ~r/does not use a remote static key/, fn ->
+        HandshakeState.initialize(@nn, true, "", rs: elem(keypair(), 1))
+      end
+
+      assert_raise ArgumentError, ~r/does not use a local static key/, fn ->
+        HandshakeState.initialize(@nn, true, "", s: keypair())
+      end
+
+      # N: the recipient pre-shares its static key; the initiator has none
+      assert_raise ArgumentError, ~r/does not use a local static key/, fn ->
+        HandshakeState.initialize("Noise_N_25519_ChaChaPoly_BLAKE2b", true, "",
+          s: keypair(),
+          rs: elem(keypair(), 1)
+        )
+      end
+
+      assert_raise ArgumentError, ~r/does not use a remote static key/, fn ->
+        HandshakeState.initialize("Noise_N_25519_ChaChaPoly_BLAKE2b", false, "",
+          s: keypair(),
+          rs: elem(keypair(), 1)
+        )
+      end
+    end
+
     test "validates key shapes against DHLEN" do
       assert_raise ArgumentError, ~r/32-byte public key/, fn ->
         HandshakeState.initialize("Noise_XX_25519_ChaChaPoly_BLAKE2b", true, "",

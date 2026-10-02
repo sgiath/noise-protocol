@@ -60,13 +60,13 @@ defmodule Noise.PatternTest do
     end
 
     test "raises ArgumentError for unsupported base pattern" do
-      assert_raise ArgumentError, "Pattern ZZ is not supported", fn ->
+      assert_raise ArgumentError, ~s(Pattern "ZZ" is not supported), fn ->
         Pattern.from_name("ZZ")
       end
     end
 
     test "raises ArgumentError for lowercase input" do
-      assert_raise ArgumentError, "Pattern noise is not supported", fn ->
+      assert_raise ArgumentError, ~s(Pattern "noise" is not supported), fn ->
         Pattern.from_name("noise")
       end
     end
@@ -81,12 +81,24 @@ defmodule Noise.PatternTest do
 
       assert_raise ArgumentError, ~r/psk is out of range/, fn -> Pattern.from_name("NNpsk") end
 
-      assert_raise ArgumentError, ~r/psk-1 is out of range/, fn ->
+      assert_raise ArgumentError, ~r/NNpsk-1" is not supported/, fn ->
         Pattern.from_name("NNpsk-1")
       end
+    end
 
-      assert_raise ArgumentError, ~r/psk-3 is out of range/, fn ->
-        Pattern.from_name("NNpsk-3")
+    test "requires the canonical modifier list (spec §8.1)" do
+      assert_raise ArgumentError, ~r/unique and sorted/, fn ->
+        Pattern.from_name("NNpsk2+psk0")
+      end
+
+      assert_raise ArgumentError, ~r/unique and sorted/, fn ->
+        Pattern.from_name("NNpsk0+psk0")
+      end
+    end
+
+    test "rejects anything outside the name grammar (spec §8)" do
+      for name <- ["NN\n", "NNpsk0\n", "NN+psk0", "NNpsk0+", "NN psk0", "NNpsk0+Psk2", "NNé"] do
+        assert_raise ArgumentError, ~r/is not supported/, fn -> Pattern.from_name(name) end
       end
     end
 

@@ -70,9 +70,12 @@ defmodule Noise.HandshakeState do
   Options:
 
     * `:s` - local static keypair `{private, public}`; required when the
-      pattern transmits or pre-shares this party's static key
+      pattern transmits or pre-shares this party's static key, forbidden
+      otherwise
     * `:rs` - remote static public key; required when the pattern pre-shares
-      the peer's static key, forbidden when the peer transmits it
+      the peer's static key, forbidden otherwise (a transmitted key is learned
+      from the handshake). `remote_static/1` therefore only ever returns a key
+      the handshake authenticated or bound into the transcript.
     * `:psks` - list of 32-byte pre-shared keys, one per `psk` token
     * `:e` - local ephemeral keypair, **for test vectors only**; reusing an
       ephemeral across handshakes is catastrophic (spec §14)
@@ -226,24 +229,37 @@ defmodule Noise.HandshakeState do
     validate_pubkey!(opts[:re], :re, dhlen)
   end
 
-  defp validate_static!(pattern, me, nil) do
-    if Pattern.transmits?(pattern, me, :s) or Pattern.pre_shares?(pattern, me, :s) do
-      raise ArgumentError, "pattern #{pattern.name} requires the local static keypair (:s)"
+  defp validate_static!(pattern, me, s) do
+    used? = Pattern.transmits?(pattern, me, :s) or Pattern.pre_shares?(pattern, me, :s)
+
+    cond do
+      used? and is_nil(s) ->
+        raise ArgumentError, "pattern #{pattern.name} requires the local static keypair (:s)"
+
+      not used? and not is_nil(s) ->
+        raise ArgumentError,
+              "pattern #{pattern.name} does not use a local static key; :s must not be set"
+
+      true ->
+        :ok
     end
   end
 
-  defp validate_static!(_pattern, _me, _s), do: :ok
+  defp validate_remote_static!(pattern, peer, rs) do
+    cond do
+      Pattern.pre_shares?(pattern, peer, :s) and is_nil(rs) ->
+        raise ArgumentError, "pattern #{pattern.name} requires the remote static public key (:rs)"
 
-  defp validate_remote_static!(pattern, peer, nil) do
-    if Pattern.pre_shares?(pattern, peer, :s) do
-      raise ArgumentError, "pattern #{pattern.name} requires the remote static public key (:rs)"
-    end
-  end
+      Pattern.pre_shares?(pattern, peer, :s) or is_nil(rs) ->
+        :ok
 
-  defp validate_remote_static!(pattern, peer, _rs) do
-    if Pattern.transmits?(pattern, peer, :s) do
-      raise ArgumentError,
-            "pattern #{pattern.name} transmits the remote static key; :rs must not be set"
+      Pattern.transmits?(pattern, peer, :s) ->
+        raise ArgumentError,
+              "pattern #{pattern.name} transmits the remote static key; :rs must not be set"
+
+      true ->
+        raise ArgumentError,
+              "pattern #{pattern.name} does not use a remote static key; :rs must not be set"
     end
   end
 

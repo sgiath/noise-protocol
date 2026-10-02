@@ -4,8 +4,9 @@ defmodule Noise.Pattern do
 
   `from_name/1` resolves a pattern name such as `"IK"`, `"XXpsk2"` or
   `"NNpsk0+psk2"` — every one-way, fundamental and deferred pattern from
-  spec §7.4-§7.6 plus the `pskN` modifiers of §9.4. Unknown patterns and
-  invalid modifiers (`psk9` on a two-message pattern, `fallback`, …) raise
+  spec §7.4-§7.6 plus the `pskN` modifiers of §9.4. Unknown patterns, invalid
+  modifiers (`psk9` on a two-message pattern, `fallback`, …) and
+  non-canonical modifier lists (unsorted or repeated, spec §8.1) raise
   `ArgumentError`.
   """
 
@@ -24,14 +25,14 @@ defmodule Noise.Pattern do
 
   @spec from_name(String.t()) :: t()
   def from_name(name) do
-    case Regex.run(~r/^([A-Z0-9]+)(.*)$/, name) do
+    case Regex.run(~r/\A([A-Z0-9]+)((?:[a-z][a-z0-9]*(?:\+[a-z][a-z0-9]*)*)?)\z/, name) do
       [_, base_name, modifiers_str] ->
         base_name
         |> get_base_pattern()
         |> apply_modifiers(name, modifiers_str)
 
       _ ->
-        raise ArgumentError, "Pattern #{name} is not supported"
+        raise ArgumentError, "Pattern #{inspect(name)} is not supported"
     end
   end
 
@@ -65,10 +66,14 @@ defmodule Noise.Pattern do
   end
 
   defp apply_modifiers(pattern, full_name, modifiers_str) do
-    tokens =
-      modifiers_str
-      |> String.split("+")
-      |> Enum.reduce(pattern.tokens, &apply_modifier(&1, &2, full_name))
+    modifiers = String.split(modifiers_str, "+")
+    tokens = Enum.reduce(modifiers, pattern.tokens, &apply_modifier(&1, &2, full_name))
+
+    # `pskN` modifiers commute, so spec §8.1 requires them sorted alphabetically
+    if modifiers != modifiers |> Enum.sort() |> Enum.dedup() do
+      raise ArgumentError,
+            "Modifiers in pattern #{full_name} must be unique and sorted alphabetically"
+    end
 
     %{pattern | name: full_name, tokens: tokens}
   end
@@ -436,7 +441,7 @@ defmodule Noise.Pattern do
   end
 
   defp get_base_pattern(pattern) do
-    raise ArgumentError, "Pattern #{pattern} is not supported"
+    raise ArgumentError, "Pattern #{inspect(pattern)} is not supported"
   end
 end
 

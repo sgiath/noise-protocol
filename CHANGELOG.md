@@ -12,6 +12,14 @@
 - `Noise.Crypto.DH` has a new `valid_seckey?/1` callback;
   `Noise.HandshakeState.initialize/4` rejects malformed private keys with
   `ArgumentError` instead of failing later as `:invalid_public_key`.
+- `Noise.HandshakeState.initialize/4` raises `ArgumentError` for an `:s` or
+  `:rs` the pattern does not use. Previously e.g. `NN` kept a caller-supplied
+  `:rs` and returned it from `remote_static/1` as if the handshake had
+  authenticated it.
+- Protocol names must follow the spec §8 grammar exactly: pattern modifiers
+  must be unique and sorted (`NNpsk0+psk2`, not `NNpsk2+psk0` or
+  `NNpsk0+psk0`), and trailing newlines or other stray characters are
+  rejected. Unsupported-pattern errors now quote the pattern name.
 
 ### Fixed
 

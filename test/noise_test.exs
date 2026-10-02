@@ -201,13 +201,16 @@ defmodule NoiseTest do
   end
 
   test "protocol names over 255 bytes are rejected (spec §8)" do
-    # Repeated psk modifiers keep the name otherwise valid, isolating the length rule.
     name = fn reps ->
       "Noise_XXpsk0" <> String.duplicate("+psk3", reps) <> "_448_AESGCM_SHA256"
     end
 
+    # No supported name reaches 255 bytes, so the boundary name fails on its
+    # repeated modifiers rather than on length.
     assert byte_size(name.(45)) == 255
-    assert %Noise.Protocol{} = Noise.protocol(name.(45))
+    error = assert_raise ArgumentError, fn -> Noise.protocol(name.(45)) end
+    refute error.message =~ "at most 255 bytes"
+
     assert_raise ArgumentError, ~r/at most 255 bytes/, fn -> Noise.protocol(name.(46)) end
   end
 end
