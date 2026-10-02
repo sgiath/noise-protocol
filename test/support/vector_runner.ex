@@ -2,7 +2,8 @@ defmodule Noise.VectorRunner do
   @moduledoc false
   # Runs one Snow/Cacophony-format test vector through the public `Noise` API,
   # checking exact ciphertexts, peer decryption, handshake hash and transport
-  # messages in both directions.
+  # messages in both directions. Every vector must drive both peers to a
+  # completed handshake, and both peers must agree on the handshake hash.
 
   import ExUnit.Assertions
 
@@ -15,15 +16,36 @@ defmodule Noise.VectorRunner do
 
   def run_vector(vector) do
     protocol = Noise.protocol(vector["protocol_name"])
-    prologue = decode_hex(vector["init_prologue"] || "")
 
-    init = Noise.handshake(protocol, true, prologue, side_opts(vector, "init", protocol))
-    resp = Noise.handshake(protocol, false, prologue, side_opts(vector, "resp", protocol))
+    init =
+      Noise.handshake(
+        protocol,
+        true,
+        prologue(vector, "init"),
+        side_opts(vector, "init", protocol)
+      )
+
+    resp =
+      Noise.handshake(
+        protocol,
+        false,
+        prologue(vector, "resp"),
+        side_opts(vector, "resp", protocol)
+      )
 
     one_way? = Noise.Pattern.one_way?(protocol.pattern)
 
-    run_messages(vector["messages"], {:handshake, init}, {:handshake, resp}, one_way?, vector)
+    {a, b} =
+      run_messages(vector["messages"], {:handshake, init}, {:handshake, resp}, one_way?, vector)
+
+    for peer <- [a, b] do
+      assert match?({:transport, _, _, _}, peer), "vector ended before the handshake completed"
+    end
+
+    assert elem(a, 3) == elem(b, 3), "peers disagree on the handshake hash"
   end
+
+  defp prologue(vector, side), do: decode_hex(vector["#{side}_prologue"])
 
   defp side_opts(vector, side, protocol) do
     [
@@ -35,7 +57,7 @@ defmodule Noise.VectorRunner do
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
 
-  defp run_messages([], _sender, _receiver, _one_way?, _vector), do: :ok
+  defp run_messages([], sender, receiver, _one_way?, _vector), do: {sender, receiver}
 
   defp run_messages([msg | rest], sender, receiver, one_way?, vector) do
     payload = decode_hex(msg["payload"])
@@ -60,9 +82,9 @@ defmodule Noise.VectorRunner do
     end
   end
 
-  defp write({:transport, tx, rx}, payload, _vector) do
+  defp write({:transport, tx, rx, hash}, payload, _vector) do
     {:ok, ciphertext, tx} = Noise.encrypt(tx, payload)
-    {ciphertext, {:transport, tx, rx}}
+    {ciphertext, {:transport, tx, rx, hash}}
   end
 
   defp read({:handshake, state}, message, vector) do
@@ -72,18 +94,20 @@ defmodule Noise.VectorRunner do
     end
   end
 
-  defp read({:transport, tx, rx}, ciphertext, _vector) do
+  defp read({:transport, tx, rx, hash}, ciphertext, _vector) do
     {:ok, payload, rx} = Noise.decrypt(rx, ciphertext)
-    {payload, {:transport, tx, rx}}
+    {payload, {:transport, tx, rx, hash}}
   end
 
   defp finish(state, vector) do
-    if hash = vector["handshake_hash"] do
-      assert Base.encode16(Noise.handshake_hash(state), case: :lower) == hash
+    hash = Noise.handshake_hash(state)
+
+    if expected = vector["handshake_hash"] do
+      assert Base.encode16(hash, case: :lower) == expected
     end
 
     {tx, rx} = Noise.split(state)
-    {:transport, tx, rx}
+    {:transport, tx, rx, hash}
   end
 
   defp decode_hex(nil), do: nil

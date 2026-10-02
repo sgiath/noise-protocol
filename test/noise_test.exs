@@ -74,11 +74,19 @@ defmodule NoiseTest do
     {:complete, m1, sender} = Noise.handshake_step(sender, "")
     {:complete, "", recipient} = Noise.handshake_step(recipient, m1)
 
-    assert {tx, nil} = Noise.split(sender)
-    assert {nil, rx} = Noise.split(recipient)
+    assert {tx, sender_rx} = Noise.split(sender)
+    assert {recipient_tx, rx} = Noise.split(recipient)
 
     {:ok, c, _} = Noise.encrypt(tx, "one way")
     assert {:ok, "one way", _} = Noise.decrypt(rx, c)
+
+    # the missing direction is nil and refuses every transport operation
+    for missing <- [sender_rx, recipient_tx] do
+      assert missing == nil
+      assert_raise ArgumentError, ~r/no cipher state/, fn -> Noise.encrypt(missing, "x") end
+      assert_raise ArgumentError, ~r/no cipher state/, fn -> Noise.decrypt(missing, c) end
+      assert_raise ArgumentError, ~r/no cipher state/, fn -> Noise.rekey(missing) end
+    end
   end
 
   describe "hostile input" do
@@ -159,12 +167,20 @@ defmodule NoiseTest do
       assert {:error, :message_too_long} = Noise.decrypt(rx, <<0::size(65_536 * 8)>>)
     end
 
-    test "nonce exhaustion is reported" do
-      {client, _, _, _} = complete_xx()
+    test "nonce exhaustion is reported and survives rekey" do
+      {client, server, _, _} = complete_xx()
       {tx, _} = Noise.split(client)
+      {_, rx} = Noise.split(server)
       tx = Noise.CipherState.set_nonce(tx, 0xFFFF_FFFF_FFFF_FFFE)
-      {:ok, _, tx} = Noise.encrypt(tx, "last")
+      rx = Noise.CipherState.set_nonce(rx, 0xFFFF_FFFF_FFFF_FFFE)
+      {:ok, last, tx} = Noise.encrypt(tx, "last")
+      {:ok, "last", rx} = Noise.decrypt(rx, last)
+
       assert {:error, :nonce_exhausted} = Noise.encrypt(tx, "too many")
+      assert {:error, :nonce_exhausted} = Noise.decrypt(rx, last)
+      # rekey keeps the nonce (spec §11.3), so it does not revive the state
+      assert {:error, :nonce_exhausted} = Noise.encrypt(Noise.rekey(tx), "too many")
+      assert {:error, :nonce_exhausted} = Noise.decrypt(Noise.rekey(rx), last)
     end
 
     test "rekey in lockstep" do

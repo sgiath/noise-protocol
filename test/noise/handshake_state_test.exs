@@ -157,19 +157,37 @@ defmodule Noise.HandshakeStateTest do
     end
   end
 
-  test "inspect never shows private keys or PSKs" do
-    {sec, _pub} = kp = keypair()
+  test "inspect never shows private keys, PSKs, the chaining key or the cipher key" do
+    name = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2b"
+    protocol = Noise.protocol(name)
+    [init_s, init_e, resp_s, resp_e] = keypairs = for _ <- 1..4, do: keypair()
+    psk = :binary.copy(<<0x5A>>, 32)
 
-    state =
-      HandshakeState.initialize("Noise_XXpsk3_25519_ChaChaPoly_BLAKE2b", true, "",
-        s: kp,
-        e: kp,
-        psks: [@psk]
-      )
+    init = HandshakeState.initialize(protocol, true, "", s: init_s, e: init_e, psks: [psk])
+    resp = HandshakeState.initialize(protocol, false, "", s: resp_s, e: resp_e, psks: [psk])
 
-    rendered = inspect(state, limit: :infinity)
-    refute rendered =~ inspect(sec)
-    refute rendered =~ "psks"
-    refute rendered =~ "ck:"
+    # -> e  <- e, ee, s, es: the initiator now holds a keyed symmetric state
+    {:ok, m1, init} = HandshakeState.write_message(init, "")
+    {:ok, "", resp} = HandshakeState.read_message(resp, m1)
+    {:ok, m2, _resp} = HandshakeState.write_message(resp, "")
+    {:ok, "", keyed} = HandshakeState.read_message(init, m2)
+    # -> s, se, psk: the PSK is mixed in and the handshake completes
+    {:ok, _m3, complete} = HandshakeState.write_message(keyed, "")
+
+    for state <- [keyed, complete] do
+      %{symmetric_state: %{ck: ck, cipher_state: %{k: k}}} = state
+      assert is_binary(k)
+
+      rendered = inspect(state, limit: :infinity, printable_limit: :infinity)
+      assert rendered =~ name
+
+      for secret <- [psk, ck, k | Enum.map(keypairs, &elem(&1, 0))] do
+        refute rendered =~ inspect(secret, limit: :infinity, printable_limit: :infinity)
+      end
+
+      refute rendered =~ "psks:"
+      refute rendered =~ "ck:"
+      refute rendered =~ ~r/\bk:/
+    end
   end
 end
