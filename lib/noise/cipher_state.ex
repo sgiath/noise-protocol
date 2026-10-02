@@ -54,6 +54,17 @@ defmodule Noise.CipherState do
   @doc """
   Sets the nonce explicitly (spec §11.4, out-of-order transport messages).
 
+  Meant for **receive** states only, when the sender transmits each
+  message's nonce alongside the ciphertext (e.g. over UDP). A cipher state
+  does not remember which nonces it has already accepted, so with explicit
+  nonces a replayed packet decrypts successfully again. The receiver must
+  keep its own record (e.g. a sliding window) of nonces that decrypted
+  successfully, reject any packet whose nonce is in it, and add a nonce
+  only after its decryption succeeds (spec §11.4).
+
+  Never move a **send** state's nonce backwards: encrypting two messages
+  under the same key and nonce breaks the cipher.
+
   Raises `ArgumentError` for values outside `0..2^64-2`.
   """
   @spec set_nonce(t(), non_neg_integer()) :: t()

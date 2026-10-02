@@ -66,8 +66,12 @@ defmodule Noise do
 
     * `:decrypt_failed` - AEAD authentication failed. During the handshake
       this means the handshake has failed: discard the handshake state
-      (spec §5.3). On a transport cipher state the state is unchanged; drop
-      the message and keep using the state.
+      (spec §5.3). On a transport cipher state the state is unchanged, so
+      dropping an injected or replayed message and continuing is safe. If a
+      genuine message was corrupted or lost instead, the sender has already
+      moved past its nonce and every later message will fail too: with the
+      implicit nonces of a reliable stream, treat it as fatal and close the
+      session.
     * `:malformed_message` - a handshake message is too short for its tokens;
       the handshake has failed
     * `:message_too_long` - a message exceeds the 65535-byte Noise limit
@@ -189,7 +193,7 @@ defmodule Noise do
   the message with its tag fits the Noise limit.
   """
   @spec encrypt(cipher_state(), binary(), binary()) ::
-          {:ok, binary(), cipher_state()} | {:error, transport_error()}
+          {:ok, binary(), cipher_state()} | {:error, :nonce_exhausted | :message_too_long}
   def encrypt(cipher_state, plain_text, ad \\ <<>>) do
     ensure_key!(cipher_state)
 
@@ -200,7 +204,11 @@ defmodule Noise do
     end
   end
 
-  @doc "Decrypts a transport message. On `{:error, :decrypt_failed}` the cipher state is unchanged; keep using it."
+  @doc """
+  Decrypts a transport message. On `{:error, :decrypt_failed}` the cipher
+  state is unchanged: an injected message can be dropped, but a corrupted
+  genuine one leaves the peers out of sync (see "Errors" above).
+  """
   @spec decrypt(cipher_state(), binary(), binary()) ::
           {:ok, binary(), cipher_state()} | {:error, transport_error()}
   def decrypt(cipher_state, cipher_text, ad \\ <<>>) do

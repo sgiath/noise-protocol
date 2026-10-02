@@ -8,6 +8,37 @@ defmodule Noise.Protocol do
     * DH: `25519`, `448`, `secp256k1` (needs the optional `lib_secp256k1` dep)
     * Cipher: `AESGCM`, `ChaChaPoly`
     * Hash: `SHA256`, `SHA512`, `BLAKE2s`, `BLAKE2b`
+
+  ## Custom primitives
+
+  `from_name/1` only knows the primitives above, but every operation
+  dispatches through the module fields of this struct, so another
+  implementation of `Noise.Crypto.DH`, `Noise.Crypto.Cipher` or
+  `Noise.Crypto.Hash` can be plugged in by building the struct yourself.
+  Start from a parsed built-in name and replace the component:
+
+      base = Noise.protocol("Noise_XX_25519_ChaChaPoly_SHA256")
+
+      protocol = %Noise.Protocol{
+        base
+        | name: "Noise_XX_25519_ChaChaPoly_BLAKE3",
+          hash: MyApp.Blake3,
+          hashlen: MyApp.Blake3.hashlen()
+      }
+
+  Keep these invariants, or the peers will derive different keys or the
+  handshake will fail:
+
+    * `name` is hashed into the transcript (spec §5.2), so it must be the
+      exact spec §8 name of the protocol you run, naming your primitive,
+      and both peers must use the same name.
+    * `dhlen` must equal `dh.dhlen()` and `hashlen` must equal
+      `hash.hashlen()`; they are cached here and used to parse messages.
+    * `pattern` must stay consistent with the pattern section of `name`;
+      take it from `Noise.Pattern.from_name/1`.
+
+  To swap in a different implementation of an algorithm that already has a
+  name (e.g. a hardware-backed X25519), keep `name` unchanged.
   """
 
   alias Noise.Crypto.Cipher

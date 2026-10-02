@@ -20,7 +20,8 @@ Elixir implementation of the [Noise Protocol Framework](https://noiseprotocol.or
 - **Cipher**: `AESGCM`, `ChaChaPoly`.
 - **Hash**: `SHA256`, `SHA512`, `BLAKE2s`, `BLAKE2b`.
 - Rekey, handshake hash for channel binding, explicit nonces for out-of-order
-  transports.
+  transports (`Noise.CipherState.set_nonce/2`; replay protection is up to the
+  receiver, see its docs).
 
 Not implemented: `fallback` (Noise Pipes), `hfs`, SHA3.
 
@@ -38,6 +39,11 @@ def deps do
   ]
 end
 ```
+
+This README tracks the `master` branch. Changes listed under *Unreleased* in
+the [CHANGELOG](CHANGELOG.md) (such as one-way `split/1` returning `nil` for
+the unused direction) are not in the published 0.3.0 release yet; see
+[HexDocs](https://hexdocs.pm/noise_protocol) for the released API.
 
 Requires Elixir 1.18+ and an OTP whose `:crypto` was built with the
 primitives you select (`:crypto.supports/1` lists them).
@@ -155,8 +161,9 @@ Noise.handshake("Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s", true, "", psks: [psk])
 ```
 
 `Noise.handshake/4` raises `ArgumentError` for a missing key the pattern
-needs, an `:rs`/`:re` the peer transmits itself, a malformed key, or a wrong
-number or size of PSKs.
+needs, an `:s`/`:rs` the pattern does not use (so `remote_static/1` only ever
+returns a key the handshake bound), an `:rs`/`:re` the peer transmits itself,
+a malformed key, or a wrong number or size of PSKs.
 
 ### One-way patterns
 
@@ -191,7 +198,7 @@ Anything coming from the network is handled without raising:
 
 | Reason                | Meaning                                                                                                                                  |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `:decrypt_failed`     | AEAD tag mismatch. During the handshake: the handshake failed. In transport: state unchanged; drop the message and keep using the state. |
+| `:decrypt_failed`     | AEAD tag mismatch. During the handshake: the handshake failed. In transport: state unchanged; see below.                                 |
 | `:malformed_message`  | Handshake message shorter than its tokens require; the handshake failed.                                                                 |
 | `:message_too_long`   | Over the 65535-byte Noise limit (65519 bytes of transport plaintext).                                                                    |
 | `:invalid_public_key` | The peer's DH key was rejected (bad encoding or low-order point); the handshake failed.                                                  |
@@ -202,7 +209,21 @@ Anything coming from the network is handled without raising:
 A failed handshake is final (spec §5.3): discard the handshake state and start
 over instead of retrying with it.
 
+A transport `:decrypt_failed` leaves the receive state unchanged, so a message
+injected by an attacker can be dropped and the session continues. A genuine
+message that was corrupted or lost cannot be recovered that way: the sender
+has already used its nonce, so every later message fails as well. On a
+reliable stream with implicit nonces, treat `:decrypt_failed` as fatal and
+close the connection.
+
 Private keys, PSKs and chaining keys are redacted from `inspect/1`.
+
+## Custom primitives
+
+DH, cipher and hash functions are behaviours (`Noise.Crypto.DH`,
+`Noise.Crypto.Cipher`, `Noise.Crypto.Hash`). To use your own implementation,
+build a `Noise.Protocol` struct with it; the `Noise.Protocol` docs list the
+invariants (exact protocol name, `dhlen`/`hashlen`) you have to keep.
 
 ## Development
 

@@ -67,7 +67,7 @@ defmodule Noise.SymmetricState do
   @spec has_key?(t()) :: boolean()
   def has_key?(%__MODULE__{cipher_state: cs}), do: CipherState.has_key?(cs)
 
-  @spec encrypt_and_hash(t(), binary()) :: {:ok, binary(), t()} | {:error, CipherState.error()}
+  @spec encrypt_and_hash(t(), binary()) :: {:ok, binary(), t()} | {:error, :nonce_exhausted}
   def encrypt_and_hash(%__MODULE__{cipher_state: cs, h: h} = state, plain_text) do
     with {:ok, cipher_text, cs} <- CipherState.encrypt_with_ad(cs, h, plain_text) do
       {:ok, cipher_text, mix_hash(%__MODULE__{state | cipher_state: cs}, cipher_text)}

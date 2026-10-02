@@ -30,10 +30,19 @@
 - Documentation: handshake `:decrypt_failed`, `:invalid_public_key` and
   `:malformed_message` are terminal (spec §5.3); `:nonce_exhausted` needs a
   new handshake because `rekey/1` keeps the nonce.
+- Documentation: a transport `:decrypt_failed` is only recoverable for an
+  injected message; a corrupted genuine message desynchronises implicit
+  nonces, so close the session.
+- Documentation: `Noise.CipherState.set_nonce/2` requires receiver-side
+  replay tracking (spec §11.4) and must not rewind a send state.
+- `Noise.encrypt/3` and `Noise.SymmetricState.encrypt_and_hash/2` specs no
+  longer list the unreachable `:decrypt_failed`.
 
 ### Added
 
 - `Noise.Pattern.one_way?/1` and `Noise.HandshakeState.one_way?/1`.
+- `Noise.Protocol` docs describe how to plug in custom DH, cipher and hash
+  implementations.
 
 ## 0.3.0
 
