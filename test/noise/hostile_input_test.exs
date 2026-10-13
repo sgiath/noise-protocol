@@ -85,6 +85,24 @@ defmodule Noise.HostileInputTest do
     end
   end
 
+  test "an encrypted field shorter than its tag is malformed, not a decryption failure" do
+    protocol = Protocol.from_name("Noise_XX_25519_ChaChaPoly_BLAKE2s")
+    init = HandshakeState.initialize(protocol, true, "", s: Protocol.generate_keypair(protocol))
+    resp = HandshakeState.initialize(protocol, false, "", s: Protocol.generate_keypair(protocol))
+    {:ok, m1, init} = HandshakeState.write_message(init, "")
+    {:ok, "", resp} = HandshakeState.read_message(resp, m1)
+    {:ok, m2, _resp} = HandshakeState.write_message(resp, "")
+
+    # <- e, ee, s, es: e (32) || encrypted s (32 + 16) || encrypted payload (16)
+    assert byte_size(m2) == 96
+
+    assert {:error, :malformed_message} =
+             HandshakeState.read_message(init, binary_part(m2, 0, 40))
+
+    assert {:error, :malformed_message} =
+             HandshakeState.read_message(init, binary_part(m2, 0, 90))
+  end
+
   test "messages over 65535 bytes are rejected on read and write (spec §3)" do
     protocol = Protocol.from_name("Noise_XX_25519_ChaChaPoly_BLAKE2s")
     init = HandshakeState.initialize(protocol, true, "", s: Protocol.generate_keypair(protocol))
