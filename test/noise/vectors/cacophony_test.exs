@@ -1,19 +1,28 @@
-defmodule Noise.Vectors.CacophonyTest do
-  use ExUnit.Case, async: true
+vectors_file = "test/vectors/cacophony.json"
 
-  alias Noise.VectorRunner
+# ExUnit runs the tests of one module serially, so the 944 vectors are split
+# into one async module per DH and cipher function to run in parallel.
+groups =
+  vectors_file
+  |> Noise.VectorRunner.load_vectors_from_file()
+  |> Enum.group_by(fn vector ->
+    ["Noise", _pattern, dh, cipher, _hash] = String.split(vector["protocol_name"], "_")
+    {dh, cipher}
+  end)
 
-  @moduletag :vectors
-  @moduletag :cacophony
+for {{dh, cipher}, vectors} <- groups do
+  defmodule Module.concat([Noise.Vectors.CacophonyTest, "DH#{dh}", cipher]) do
+    use ExUnit.Case, async: true
 
-  @vectors_file "test/vectors/cacophony.json"
-  @external_resource @vectors_file
+    @moduletag :vectors
+    @moduletag :cacophony
 
-  for vector <- VectorRunner.load_vectors_from_file(@vectors_file) do
-    name = vector["name"] || vector["protocol_name"] || "unknown"
+    @external_resource vectors_file
 
-    test "cacophony: #{name}" do
-      VectorRunner.run_vector(unquote(Macro.escape(vector)))
+    for vector <- vectors do
+      test "cacophony: #{vector["name"] || vector["protocol_name"]}" do
+        Noise.VectorRunner.run_vector(unquote(Macro.escape(vector)))
+      end
     end
   end
 end
