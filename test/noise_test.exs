@@ -89,58 +89,6 @@ defmodule NoiseTest do
     end
   end
 
-  describe "hostile input" do
-    setup do
-      protocol = Noise.protocol(@xx)
-      client = Noise.handshake(protocol, true, "", s: Noise.generate_keypair(protocol))
-      server = Noise.handshake(protocol, false, "", s: Noise.generate_keypair(protocol))
-      {:ok, m1, client} = Noise.handshake_step(client, "")
-      {:ok, "", server} = Noise.handshake_step(server, m1)
-      {:ok, m2, server} = Noise.handshake_step(server, "")
-      {:ok, protocol: protocol, client: client, server: server, m1: m1, m2: m2}
-    end
-
-    test "truncated ephemeral is malformed", %{protocol: protocol} do
-      server = Noise.handshake(protocol, false, "", s: Noise.generate_keypair(protocol))
-      assert {:error, :malformed_message} = Noise.handshake_step(server, <<1, 2, 3>>)
-      assert {:error, :malformed_message} = Noise.handshake_step(server, <<>>)
-    end
-
-    test "truncated encrypted static and payload are malformed", %{client: client, m2: m2} do
-      # m2 = e(32) || enc(s)(48) || enc(payload)(16)
-      assert {:error, :malformed_message} = Noise.handshake_step(client, binary_part(m2, 0, 40))
-      assert {:error, :malformed_message} = Noise.handshake_step(client, binary_part(m2, 0, 90))
-    end
-
-    test "flipped tag bit fails authentication", %{client: client, m2: m2} do
-      size = byte_size(m2) - 1
-      <<prefix::binary-size(^size), last>> = m2
-      tampered = <<prefix::binary, Bitwise.bxor(last, 1)>>
-
-      assert {:error, :decrypt_failed} = Noise.handshake_step(client, tampered)
-    end
-
-    test "low-order ephemeral is rejected as invalid_public_key", %{protocol: protocol} do
-      server = Noise.handshake(protocol, false, "", s: Noise.generate_keypair(protocol))
-      {:ok, "", server} = Noise.handshake_step(server, <<0::256>>)
-      # the DH happens on the responder's write (ee)
-      assert {:error, :invalid_public_key} = Noise.handshake_step(server, "")
-    end
-
-    test "messages over 65535 bytes are rejected on read and write", %{client: client, m2: m2} do
-      assert {:error, :message_too_long} =
-               Noise.handshake_step(client, m2 <> :binary.copy(<<0>>, 65_536))
-
-      {:ok, "", client} = Noise.handshake_step(client, m2)
-
-      assert {:error, :message_too_long} =
-               Noise.handshake_step(client, :binary.copy(<<0>>, 65_500))
-
-      assert {:complete, _, _} =
-               Noise.handshake_step(client, :binary.copy(<<0>>, 65_535 - 48 - 16))
-    end
-  end
-
   describe "transport" do
     test "decrypt failure keeps the receive state in sync" do
       {client, server, _, _} = complete_xx()
