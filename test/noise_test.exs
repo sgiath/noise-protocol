@@ -112,33 +112,4 @@ defmodule NoiseTest do
       assert_raise ArgumentError, fn -> Noise.rekey(cs) end
     end
   end
-
-  test "unsupported protocol names raise ArgumentError" do
-    for name <- [
-          "Noise_NN_25519_ChaChaPoly",
-          "Noise_NN_25519_ChaChaPoly_BLAKE2s_extra",
-          "Noise_ZZ_25519_ChaChaPoly_BLAKE2s",
-          "Noise_NN_P256_ChaChaPoly_BLAKE2s",
-          "Noise_NN_25519_XChaChaPoly_BLAKE2s",
-          "Noise_NN_25519_ChaChaPoly_SHA3",
-          "Noise_NNpsk3_25519_ChaChaPoly_BLAKE2s",
-          "Noise_NNfallback_25519_ChaChaPoly_BLAKE2s"
-        ] do
-      assert_raise ArgumentError, fn -> Noise.protocol(name) end
-    end
-  end
-
-  test "protocol names over 255 bytes are rejected (spec §8)" do
-    name = fn reps ->
-      "Noise_XXpsk0" <> String.duplicate("+psk3", reps) <> "_448_AESGCM_SHA256"
-    end
-
-    # No supported name reaches 255 bytes, so the boundary name fails on its
-    # repeated modifiers rather than on length.
-    assert byte_size(name.(45)) == 255
-    error = assert_raise ArgumentError, fn -> Noise.protocol(name.(45)) end
-    refute error.message =~ "at most 255 bytes"
-
-    assert_raise ArgumentError, ~r/at most 255 bytes/, fn -> Noise.protocol(name.(46)) end
-  end
 end

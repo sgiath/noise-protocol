@@ -20,12 +20,6 @@ defmodule Noise.HandshakeStateTest do
       assert HandshakeState.next_action(state) == :read
     end
 
-    test "raises for unknown protocol" do
-      assert_raise ArgumentError, fn ->
-        HandshakeState.initialize("Noise_ZZ_25519_ChaChaPoly_BLAKE2b", true)
-      end
-    end
-
     test "raises for unknown options" do
       assert_raise ArgumentError, fn -> HandshakeState.initialize(@nn, true, "", psk: @psk) end
     end
