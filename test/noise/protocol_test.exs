@@ -43,17 +43,21 @@ defmodule Noise.ProtocolTest do
     end
 
     test "rejects names over 255 bytes (spec §8)" do
-      name = fn reps ->
-        "Noise_XXpsk0" <> String.duplicate("+psk3", reps) <> "_448_AESGCM_SHA256"
+      name = fn hash ->
+        "Noise_XXpsk0" <> String.duplicate("+psk3", 45) <> "_448_AESGCM_" <> hash
       end
 
       # No supported name reaches 255 bytes, so the boundary name fails on its
       # repeated modifiers rather than on length.
-      assert byte_size(name.(45)) == 255
-      error = assert_raise ArgumentError, fn -> Protocol.from_name(name.(45)) end
+      assert byte_size(name.("SHA256")) == 255
+      error = assert_raise ArgumentError, fn -> Protocol.from_name(name.("SHA256")) end
       refute error.message =~ "at most 255 bytes"
 
-      assert_raise ArgumentError, ~r/at most 255 bytes/, fn -> Protocol.from_name(name.(46)) end
+      assert byte_size(name.("BLAKE2s")) == 256
+
+      assert_raise ArgumentError, ~r/at most 255 bytes/, fn ->
+        Protocol.from_name(name.("BLAKE2s"))
+      end
     end
   end
 end
