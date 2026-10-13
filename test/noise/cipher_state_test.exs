@@ -62,6 +62,11 @@ defmodule Noise.CipherStateTest do
 
     assert {:error, :nonce_exhausted} = CipherState.encrypt_with_ad(state, "", "one too many")
     assert {:error, :nonce_exhausted} = CipherState.decrypt_with_ad(state, "", <<0::256>>)
+
+    # rekey keeps the nonce (spec §11.3), so it does not revive the state
+    rekeyed = CipherState.rekey(state)
+    assert {:error, :nonce_exhausted} = CipherState.encrypt_with_ad(rekeyed, "", "one too many")
+    assert {:error, :nonce_exhausted} = CipherState.decrypt_with_ad(rekeyed, "", <<0::256>>)
   end
 
   test "set_nonce rejects out-of-range values", %{keyed: state} do

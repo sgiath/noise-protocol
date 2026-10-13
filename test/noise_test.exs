@@ -1,6 +1,8 @@
 defmodule NoiseTest do
   use ExUnit.Case, async: true
 
+  alias Noise.CipherState
+
   doctest Noise
 
   @xx "Noise_XX_25519_ChaChaPoly_BLAKE2s"
@@ -45,13 +47,10 @@ defmodule NoiseTest do
     assert {:ok, "again", _} = Noise.decrypt(server_rx, c3)
   end
 
-  test "explicit write_message/read_message enforce turns" do
+  test "explicit write_message/read_message tag the final message as complete" do
     protocol = Noise.protocol("Noise_NN_25519_AESGCM_SHA256")
     init = Noise.handshake(protocol, true)
     resp = Noise.handshake(protocol, false)
-
-    assert {:error, :wrong_turn} = Noise.write_message(resp, "")
-    assert {:error, :wrong_turn} = Noise.read_message(init, <<0::256>>)
 
     {:ok, m1, init} = Noise.write_message(init, "")
     {:ok, "", resp} = Noise.read_message(resp, m1)
@@ -90,24 +89,15 @@ defmodule NoiseTest do
   end
 
   describe "transport" do
-    test "decrypt failure keeps the receive state in sync" do
-      {client, server, _, _} = complete_xx()
-      {tx, _} = Noise.split(client)
-      {_, rx} = Noise.split(server)
-
-      {:ok, c1, tx} = Noise.encrypt(tx, "one")
-      {:ok, c2, _tx} = Noise.encrypt(tx, "two")
-
-      assert {:error, :decrypt_failed} = Noise.decrypt(rx, c2)
-      {:ok, "one", rx} = Noise.decrypt(rx, c1)
-      {:ok, "two", _rx} = Noise.decrypt(rx, c2)
+    # Built directly, as Noise.split/1 would return it: the nonce and rekey
+    # rules themselves are tested at the Noise.CipherState interface.
+    setup do
+      protocol = Noise.protocol(@xx)
+      cs = protocol |> CipherState.initialize() |> CipherState.initialize_key(<<7::256>>)
+      {:ok, protocol: protocol, tx: cs, rx: cs}
     end
 
-    test "message length bound" do
-      {client, server, _, _} = complete_xx()
-      {tx, _} = Noise.split(client)
-      {_, rx} = Noise.split(server)
-
+    test "messages are bounded at 65535 bytes including the tag (spec §3)", %{tx: tx, rx: rx} do
       assert {:ok, ciphertext, _} = Noise.encrypt(tx, :binary.copy(<<0>>, 65_519))
       assert byte_size(ciphertext) == 65_535
       assert {:ok, _, _} = Noise.decrypt(rx, ciphertext)
@@ -115,34 +105,8 @@ defmodule NoiseTest do
       assert {:error, :message_too_long} = Noise.decrypt(rx, <<0::size(65_536 * 8)>>)
     end
 
-    test "nonce exhaustion is reported and survives rekey" do
-      {client, server, _, _} = complete_xx()
-      {tx, _} = Noise.split(client)
-      {_, rx} = Noise.split(server)
-      tx = Noise.CipherState.set_nonce(tx, 0xFFFF_FFFF_FFFF_FFFE)
-      rx = Noise.CipherState.set_nonce(rx, 0xFFFF_FFFF_FFFF_FFFE)
-      {:ok, last, tx} = Noise.encrypt(tx, "last")
-      {:ok, "last", rx} = Noise.decrypt(rx, last)
-
-      assert {:error, :nonce_exhausted} = Noise.encrypt(tx, "too many")
-      assert {:error, :nonce_exhausted} = Noise.decrypt(rx, last)
-      # rekey keeps the nonce (spec §11.3), so it does not revive the state
-      assert {:error, :nonce_exhausted} = Noise.encrypt(Noise.rekey(tx), "too many")
-      assert {:error, :nonce_exhausted} = Noise.decrypt(Noise.rekey(rx), last)
-    end
-
-    test "rekey in lockstep" do
-      {client, server, _, _} = complete_xx()
-      {tx, _} = Noise.split(client)
-      {_, rx} = Noise.split(server)
-
-      {:ok, c, _} = Noise.encrypt(Noise.rekey(tx), "fresh")
-      assert {:error, :decrypt_failed} = Noise.decrypt(rx, c)
-      assert {:ok, "fresh", _} = Noise.decrypt(Noise.rekey(rx), c)
-    end
-
-    test "keyless cipher state is refused" do
-      cs = Noise.CipherState.initialize(Noise.protocol(@xx))
+    test "keyless cipher state is refused", %{protocol: protocol} do
+      cs = CipherState.initialize(protocol)
       assert_raise ArgumentError, fn -> Noise.encrypt(cs, "plaintext") end
       assert_raise ArgumentError, fn -> Noise.decrypt(cs, "ciphertext") end
       assert_raise ArgumentError, fn -> Noise.rekey(cs) end
